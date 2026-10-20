@@ -1,0 +1,10 @@
+subscription_id = "fcbf086b-8ce4-4ca5-a3d7-0c56489e25f6"
+environment     = "dev"
+location        = "northeurope"
+name_suffix     = "mb261020"
+
+# Enable only after configuring both protected GitHub environments; see README.
+enable_reader_federation = false
+
+# Optional: your Entra user object UUID for read-only archive inspection.
+# operator_object_id = "<your-user-object-uuid>"
