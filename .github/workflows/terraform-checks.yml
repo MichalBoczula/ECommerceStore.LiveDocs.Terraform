@@ -1,0 +1,64 @@
+name: Terraform checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        root: [archive, hosting]
+    defaults:
+      run:
+        working-directory: ${{ matrix.root }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.16.5
+          terraform_wrapper: false
+      - run: terraform init -backend=false -input=false -lockfile=readonly
+      - run: terraform fmt -check -recursive
+      - run: terraform validate
+      - name: Verify mocked plans with conflicting local deployment inputs
+        shell: bash
+        run: |
+          # A deployment tfvars file must not change mocked test scenarios.
+          if [[ '${{ matrix.root }}' == archive ]]; then
+            printf '%s\n' '{"enable_reader_federation":true,"operator_object_id":"invalid"}' > collision.auto.tfvars.json
+          else
+            printf '%s\n' '{"external_ingress_enabled":true,"min_replicas":99,"livedocs_image":"invalid"}' > collision.auto.tfvars.json
+          fi
+          terraform test -no-color
+
+  published-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read the example deployment image
+        id: image
+        shell: python
+        run: |
+          import os, pathlib, re
+          text = pathlib.Path('hosting/terraform.tfvars.example').read_text()
+          image = re.search(r'^livedocs_image\s*=\s*"([^"]+)"', text, re.M).group(1)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
+              out.write(f'image={image}\n')
+      - uses: actions/checkout@v4
+        with:
+          repository: MichalBoczula/ECommerceStore.LiveDocs
+          ref: a609ca98766b48557e5f5475e8fd223315ca9991
+          path: source-contract
+      - name: Verify real image, health, routes, readiness failure and build identity
+        working-directory: source-contract
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
+        run: bash scripts/smoke-container.sh "$IMAGE" a609ca98766b48557e5f5475e8fd223315ca9991
